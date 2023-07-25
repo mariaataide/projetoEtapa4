@@ -1,0 +1,147 @@
+.quarto-title {
+  text-align: center;
+}
+
+h1 {
+  font-size: 25px;
+}
+
+.subtitle {
+  font-size: 20px;
+  ;
+}
+
+.quarto-title-meta {
+  text-align: center;
+  width: 1600px;
+}
+
+.anchored {
+  font-size: 20px;
+
+}
+
+#toc-title {
+  font-size: 20px;
+}
+
+ul {
+  font-size: 15px;
+}
+
+.paragrafo {
+  text-align: justify;
+  font-family: Segoe UI;
+  line-height: 2em;
+}
+
+hr {
+  border: none;
+}
+
+table {
+  font-size: small;
+  font-family: Segoe UI, Helvetica, sans-serif;
+}
+
+details>summary {
+    color: #6c757d;
+    font-size: smaller;
+}
+
+caption { 
+  font-size: 13px;
+  font-family: Segoe UI;
+  text-align: center;
+}
+
+.table-caption, caption {
+    color: black;
+    font-family: Segoe UI;
+    font-size: 16px;
+}
+
+
+thead, tbody, tfoot, tr, td, th {
+    border-color: inherit;
+    border-style: solid;
+    border-width: 0;
+    font-family: Segoe UI;
+}
+
+
+
+.callout.callout-style-default .callout-body {
+    font-size: .9rem;
+    font-weight: 400;
+    text-align: justify;
+}
+
+#titulo-tabreg {
+  font-weight: normal;
+  font-family: Segoe UI;
+  font-size: 16px;
+}
+
+#minhatabela {
+  font-family: Segoe UI;
+  margin-left:auto; 
+  margin-right:auto;
+}
+
+/*--------------Código--------------*/
+
+code {
+  font-family: Fira Code Light, cascadia mono ExtraLight, Lucida Console;
+}
+
+pre {
+  color: black;
+}
+
+pre>code.sourceCode>span {
+  color: white;
+}
+
+code span.cf {
+  color: cyan;
+  font-weight: bold;
+}
+
+code span.sc {
+  color: grey;
+}
+
+code span.fu {
+  color: #81cef9;
+}
+
+code span.st {
+  color: greenyellow;
+}
+
+code span.at {
+  color: white;
+}
+
+code span.cn {
+  color: orangered;
+}
+
+code span {
+  color: white;
+}
+
+code span.do {
+  color: lightgrey;
+  font-style: italic;
+}
+
+code span.dv {
+  color: plum;
+}
+
+code span.ot {
+  color: lightgrey;
+}
+

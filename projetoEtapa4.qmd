@@ -1,0 +1,551 @@
+---
+title: "Curso de Análise de Dados para Qualificação da Gestão em Saúde"
+subtitle: "1ª Avaliação do Módulo 2"
+format: 
+  html:
+    css: "styles.css"
+editor: visual
+author: "Maria Amélia Santiago Ataide"
+lang: pt-br
+execute: 
+  warning: false
+  message: false
+toc: true
+toc-location: body
+code-line-numbers: true
+code-block-bg: "black"
+code-block-border-left: "#31BAE9"
+code-overflow: scroll
+code-fold: true
+bibliography: references.bib
+csl: "abnt.csl"
+---
+
+<br>
+
+::: callout-warning
+A história descrita neste relatório é parcialmente fictícia, sendo elaborada apenas com o intuito de facilitar a interpretação dos resultados. A análise aqui realizada é totalmente baseada nos *insights* gerados pelos dados, sem nenhum lastro no conhecimento científico das disciplinas da área da saúde.
+:::
+
+<br>
+
+```{r}
+#| echo: false
+## Pacotes
+if(!require(pacman)) {install.packages("pacman")}
+pacman::p_load(
+  tidyverse,
+  patchwork,
+  lmtest,
+  flextable,
+  update = FALSE,           ## instala os pacotes
+  install = FALSE          ## atualiza os pacotes
+)
+```
+
+### Introdução
+
+<br>
+
+::: paragrafo
+Maria ao saber que o seu vizinho Seu Antônio, que toma café regularmente estava com câncer de pâncreas ficou preocupada com a possibilidade de também desenvolver a doença, visto que é viciada em café. Então, Maria resolveu estimar **modelo logit** para verificar a sua própria probabilidade ter câncer de pâncreas. Sabendo que seu vizinho é fumante e que o consumo de cigarro causa diversas doenças, Maria usou como variáveis de interesse `cafe` e `cigarro`. A fim de considerear outros fatores que podem influenciar na saúde de um indivíduo, foram incluídas as variáveis de controle `sexo` e `idoso`. De acordo com senso comum, os homens tendem a ser menos cuidadosos com a saúde e é razoável pensar que pessoas idosas têm a saúde mais frágil
+:::
+
+<br>
+
+### Dados
+
+<br>
+
+::: paragrafo
+Para investigar se o café aumenta a probabilidade de desenvolver câncer de pâncreas, Maria usou dados de um estudo observacional realizado com 2.000 indivíduos. De posse dessas informações, Maria resolveu verificar se as variáveis disponíveis no banco eram adequadas para ajustar o modelo pretendido.
+
+<br>
+
+```{r fig.align='center', fig.height=10, fig.width=15}
+#| echo: true
+
+## Importacao dos dados
+dados <-
+  read.csv(
+    "MariaAmelia.csv",
+     encoding = "UTF-8",
+     stringsAsFactors = TRUE
+  )
+
+## Codificacao das variaveis: transformando factor em numeric
+dados <- dados |> 
+  dplyr::mutate(
+    sexo = ifelse(sexo == "Masculino", 1, 0),
+    cafe = ifelse(cafe == "Sim", 1, 0),
+    cigarro = ifelse(cigarro == "Sim", 1, 0),
+    cancerpancreas = ifelse(cancerpancreas == "Sim", 1, 0),
+    idoso = ifelse(idade >= 60, 1, 0),
+    faixaetaria = dplyr::case_when(
+      idademdecenios >= 2 & idademdecenios < 3 ~ "20-29",
+      idademdecenios >= 3 & idademdecenios < 4 ~ "30-39",
+      idademdecenios >= 4 & idademdecenios < 5 ~ "40-49",
+      idademdecenios >= 5 & idademdecenios < 6 ~ "50-59",
+      idademdecenios >= 6 & idademdecenios < 7 ~ "60-69",
+      idademdecenios >= 7 & idademdecenios < 8 ~ "70-79",
+      idademdecenios >= 8 & idademdecenios < 9 ~ "80-89",
+      idademdecenios >= 9 & idademdecenios < 10 ~ "90-99"
+    ),
+    faixaetaria = factor(faixaetaria),
+  ) |> 
+  dplyr::relocate(
+    c(idademdecenios, faixaetaria, idoso), 
+    .after = idade
+  )
+
+## Verificando dados 
+dados |> 
+  dplyr::select(-c(id, idade, idademdecenios, faixaetaria)) |> 
+  dplyr::mutate(dplyr::across(1:5, factor)) |> 
+  modelsummary::datasummary_skim(
+  title = "Tabela 1 - Frequência", 
+  type = "categorical", 
+  histogram = FALSE
+)
+```
+
+```{r fig.align='center', fig.height=4, fig.width=7.5}
+
+dados |> 
+ggplot2::ggplot(ggplot2::aes(x = cancerpancreas)) +
+  ggplot2::geom_histogram(ggplot2::aes(y = ..density..),
+                          colour = "navy", fill = "navy") +
+  ggplot2::geom_density(lwd = 1, colour = "skyblue",
+                        fill = 4, alpha = 0.25) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Gráfico 1 - Distribuição da variável cancerpancreas", y = "") +
+  ggplot2::theme(
+    title = ggplot2::element_text(size = 10), 
+    plot.title = ggplot2::element_text(hjust = .5),
+    axis.text.y = ggplot2::element_blank(),
+    axis.ticks.y = ggplot2::element_blank()
+  )
+```
+
+<br>
+
+Ao observar a Tabela 1 e o Gráfico 1, Maria constatou que a variável dependente do modelo (`cancerpancreas`) é uma variável Bernoulli, que assume 1 quando há presença do câncer de pâncreas (sucesso) e 0 na ausência da doença (fracasso), e que a base de dados possui o conjunto de variáveis independentes de que ela precisa para a sua estimação.
+
+Contudo, um ponto de alerta emerge ao se analisar a Tabela 1 e o Gráfico 1: a discrepância entre a quantidade de indivíduos com e sem câncer de pâncreas. No *dataset* 96,5% (1.930 observações) das informações são de pessoas sem a doença, ao passo que apenas 3,5% (70 observações) estão doentes. De acordo com o blog *Outside Two Standard Deviation* [-@outsidetwostandarddeviations2018], um grande problema da regressão logística e de outros classificadores reside na sensibilidade à desbalanceamentos na base de dados.
+:::
+
+<br>
+
+### Análise descritiva
+
+<br>
+
+::: paragrafo
+Antes de concluir que o café causa câncer de pâncreas, Maria examinou gráficos de linhas da média com erro-padrão. Assim, ela pôde varificar se existem interações entre as principais variáveis do modelo que ela pretende estimar e se o cigarro é uma variável de confusão.
+
+A análise do Gráfico 1 permitiu concluir que o cigarro atua como uma variável de confusão na relação entre o consumo de café e o desenvolvimento de câncer de pâncreas. Essa conclusão é corroborada por dois fatores. O primeiro é a associação positiva entre fumar e ter câncer de pâncreas, assim como entre fumar e consumir café (Gráficos de 1A a 1C). O segundo fator é o fato de que, os indivíduos fumantes têm maios propensão a ter câncer de pâncreas, independentemente de consumirem ou não café. Ademais, também é possível observar que `cigarro` e `cafe` interagem, dado que os indivíduos que fumam e tomam café tiveram mais câncer de pâncreas do que os indivíduos que apenas fumam (Gráfico 1D).
+
+<br>
+
+```{r fig.align='center', fig.height=7.5, fig.width=10}
+
+gA <- dados  |>
+  ggplot2::ggplot() +
+  ggplot2::aes(
+    x = cafe,
+    y = cancerpancreas
+  ) +
+  ggplot2::stat_summary(fun = mean, geom = "point") +
+  #ggplot2::stat_summary(fun = mean, geom = "line", size = 1, color = "navy") + 
+  ggplot2::stat_summary(
+    fun.data =  mean_se,
+    geom = "errorbar",
+    width = 0.02,
+    size = 1,
+    color = "navy"
+  ) +
+  ggplot2::labs(
+    title = "A: Resposta de cancerpancreas ao cafe"
+  ) +
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    title = ggplot2::element_text(size = 9)
+  )
+
+gB <- dados  |>
+  ggplot2::ggplot() +
+  ggplot2::aes(
+    x = cigarro,
+    y = cancerpancreas
+  ) +
+  ggplot2::stat_summary(fun = mean, geom = "point") +
+  #ggplot2::stat_summary(fun = mean, geom = "line", size = 1, color = "navy") + 
+  ggplot2::stat_summary(
+    fun.data =  mean_se,
+    geom = "errorbar",
+    width = 0.02,
+    size = .8,
+    color = "navy"
+  ) +
+  ggplot2::labs(
+    title = "B: Resposta de cancerpancreas ao cigarro"
+  ) +
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    title = ggplot2::element_text(size = 9)
+  )
+gC <- dados  |>
+  ggplot2::ggplot() +
+  ggplot2::aes(
+    x = cigarro,
+    y = cafe
+  ) +
+  ggplot2::stat_summary(fun = mean, geom = "point") +
+  #ggplot2::stat_summary(fun = mean, geom = "line", size = 1, color = "navy") + 
+  ggplot2::stat_summary(
+    fun.data =  mean_se,
+    geom = "errorbar",
+    width = 0.02,
+    size = .8,
+    color = "navy"
+  ) +
+  ggplot2::labs(
+    title = "C: Resposta do cafe ao cigarro"
+  ) +
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    title = ggplot2::element_text(size = 8)
+  )
+
+#gD <- dados  |>
+#  ggplot2::ggplot() +
+#  ggplot2::aes(
+#    x = cafe,
+#    y = cigarro
+#  ) +
+#  ggplot2::stat_summary(fun = mean, geom = "point") +
+#  #ggplot2::stat_summary(fun = mean, geom = "line", size = 1, #color = "navy") + 
+#  ggplot2::stat_summary(
+#    fun.data =  mean_se,
+#    geom = "errorbar",
+#    width = 0.02,
+#    size = .8,
+#    color = "navy"
+#  ) +
+#  ggplot2::labs(
+#    title = "D: Resposta do cigarro ao cafe"
+#  ) +
+#  ggplot2::theme_bw() +
+#  ggplot2::theme(
+#    axis.text = ggplot2::element_blank(),
+#    axis.ticks = ggplot2::element_blank(),
+#    title = ggplot2::element_text(size = 8)
+#  )
+
+
+#gE <- dados  |>
+#  ggplot2::ggplot() +
+#  ggplot2::aes(
+#    x = cigarro,
+#    y = cancerpancreas,
+#    color = factor(cafe),
+#    groups = cafe
+#  ) +
+#  ggplot2::stat_summary(fun = mean, geom = "point") +
+#  ggplot2::stat_summary(fun = mean, geom = "line", size = .8) +  
+#  ggplot2::stat_summary(
+#    fun.data =  mean_se,
+#    geom = "errorbar",
+#    width = 0.02,
+#    size = .8
+#  ) +
+#  ggplot2::scale_color_manual(
+#    values = c("skyblue", "navy"), 
+#    labels = c("Não toma café", "Toma café")
+#  ) +
+#  ggplot2::labs(
+#    color = NULL,
+#    title = "E: Interação entre cafe e cancerpancreas, segundo #consumo de café"
+#  ) +
+#  ggplot2::theme_bw() +
+#  ggplot2::theme(
+#    axis.text = ggplot2::element_blank(),
+#    axis.ticks = ggplot2::element_blank(),
+#    title = ggplot2::element_text(size = 8),
+#    legend.text = ggplot2::element_text(size = 7),
+#    legend.position = "bottom"
+#  )
+
+
+gD <- dados  |>
+  ggplot2::ggplot() +
+  ggplot2::aes(
+    x = cafe,
+    y = cancerpancreas,
+    color = factor(cigarro),
+    groups = cigarro
+  ) +
+  ggplot2::stat_summary(fun = mean, geom = "point") +
+  ggplot2::stat_summary(fun = mean, geom = "line", size = .8) +  
+  ggplot2::stat_summary(
+    fun.data =  mean_se,
+    geom = "errorbar",
+    width = 0.02,
+    size = .8
+  ) +
+  ggplot2::scale_color_manual(
+    values = c("skyblue", "navy"), 
+    labels = c("Não fumante", "Fumante")
+  ) +
+  ggplot2::labs(
+    color = NULL,
+    title = "D: Interação entre cafe e cancerpancreas, segundo consumo de cigarro"
+  ) +
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    title = ggplot2::element_text(size = 8),
+    legend.text = ggplot2::element_text(size = 7),
+    legend.position = "bottom"
+  )
+
+graf <- (gA + gB ) / gC / gD
+
+graf + 
+  patchwork::plot_annotation(
+    title = "Gráfico 2 - Lineplot da média com erro-padrão",
+    theme = ggplot2::theme(
+      title = ggplot2::element_text(size = 12),
+      plot.title = ggplot2::element_text(hjust = .5)
+  )
+)
+
+```
+
+<br>
+
+Um método bastante utilizado para mensurar a correlação entre duas variáveis contínuas é a matriz de correlação. Essa ferramenta é frequentemente usada para verificar a correlação linear entre duas variáveis contínuas. Ao se comparar pares de variáveis categóricas, as tabelas de contingência são amplamente empregadas na pesquisa científica em diversas áreas [@outsidetwostandarddeviations2018].
+
+Observando as tabelas de contingência apresentadas no Gráfico 3, constata-se que os indivíduos expostos às quatro variáveis explicativas exibiram uma maior suscetibilidade ao câncer de pâncreas. Dentre estes fatores de risco, cigarro foi o que , proporcionalmente, demonstrou a maior incidência de resultados adversos a sua exposição, seguido pelo café.
+
+```{r fig.align='center', fig.height=10, fig.width=15}
+## Transforma os dados para exibicao na tabela
+tab <- 
+  dados |>
+   dplyr::select(sexo, idoso:cancerpancreas) |> 
+   dplyr::mutate(
+     sexo = ifelse(sexo == 1, "Sim", "Não"),
+     cigarro = ifelse(cigarro == 1, "Sim", "Não"),
+     cafe = ifelse(cafe == 1, "Sim", "Não"),
+     idoso = ifelse(idoso == 1, "Sim", "Não"),
+     cancerpancreas = ifelse(
+       cancerpancreas == 1, "Sim", "Não"
+     ),
+     dplyr::mutate(dplyr::across(dplyr::where(is.character), factor))
+   ) |> 
+  dplyr::rename(homem = sexo) 
+
+## Cria vetor para iteracao
+colunas <- c("homem", "cafe", "cigarro", "idoso")
+
+## Cria vetores para armazenar os resultados dos loops
+RR <- list()
+tab_cont <- list()
+soma_col <- list()
+
+## Cria tabelas de contingencia para as 3 variaveis
+for (i in colunas) {
+tab_cont[[i]] <- table(
+  tab[[5]],
+  tab[[i]],
+  dnn = c("Reposta:\ncancerpancreas", paste("Exposição:", i))
+  )
+
+## Calcula a soma das linhas
+soma_col[[i]] <- marginSums(tab_cont[[i]], margin = 2)
+
+## Calcula o risco relativo  
+RR[[i]] <- 
+  (tab_cont[[i]][2, 2] / soma_col[[i]][[2]]) / (tab_cont[[i]][2, 1] / soma_col[[i]][[1]]) 
+
+}
+
+par(mfrow = c(2, 2), mar = c(3,3,5,3), cex = 1.3)
+
+nomes <- names(tab_cont)
+for (i in nomes) {
+  mosaicplot(
+    tab_cont[[i]], 
+    main = "", 
+    color = c("skyblue", "navy")
+  )
+  mtext(
+    "Gráfico 3 - Tabelas de contigência",
+    side = 3,
+    line = -2,
+    outer = TRUE,
+    cex  = 1.7 
+  )
+}
+```
+
+Construídas as tabelas de contingência, pode-se facilmente calcular o risco relativo (RR). Esta estatística indica se o grupo exposto e não exposto tem riscos absolutos iguais[^1]. Isso significa que, quando o RR é igual à 1, não há associação entre a exposição e desfecho. No entanto, um RR menor do que 1 sinaliza uma ação protetiva da exposição, enquanto o RR superior a 1 denota que a exposição aumenta o risco de ocorrência do resultado desfavorável.
+
+As quatro variáveis investigadas obtiveram RR acima de 1, sugerindo que todas elas elevam a probabilidade de um indivíduo desenvolver câncer de pâncreas. Novamente, `cigarro` (`r round(RR[[3]], 2)`) e `cafe` (`r round(RR[[2]], 2)`) alcançaram os maiores valores, com RR do `cigarro` ficando 5 vezes acima do RR do `cafe`. Isso indica que a exposição a estes dois fatores oferece mais riscos ao aparecimento de câncer de pâncreas do que as variáveis `homem` (`r round(RR[[1]], 2)`) e `idoso` (`r round(RR[[4]], 2)`).
+:::
+
+[^1]: O risco absoluto (RA) é dado pela divisão do número de resultados adversos pelo total de observações no grupo.
+
+### Modelo logit
+
+<br>
+
+```{r}
+#| echo: false
+#| results: hide
+## Modelos
+modelo1 <- cancerpancreas ~ cafe
+modelo2 <- cancerpancreas ~ cigarro
+modelo3 <- cancerpancreas ~ cafe + sexo
+modelo4 <- cancerpancreas ~ cigarro + sexo
+modelo5 <- cancerpancreas ~ cafe + idoso
+modelo6 <- cancerpancreas ~ cigarro + idoso
+modelo7 <- cancerpancreas ~ cafe + sexo + idoso
+modelo8 <- cancerpancreas ~ cigarro + sexo + idoso
+modelo9 <- cancerpancreas ~ cafe + cigarro
+
+## Estimacoes
+reg1 <- glm(modelo1, family = binomial(link = "logit"), data = dados)
+reg2 <- glm(modelo2, family = binomial(link = "logit"), data = dados)
+reg3 <- glm(modelo3, family = binomial(link = "logit"), data = dados)
+reg4 <- glm(modelo4, family = binomial(link = "logit"), data = dados)
+reg5 <- glm(modelo5, family = binomial(link = "logit"), data = dados)
+reg6 <- glm(modelo6, family = binomial(link = "logit"), data = dados)
+reg7 <- glm(modelo7, family = binomial(link = "logit"), data = dados)
+reg8 <- glm(modelo8, family = binomial(link = "logit"), data = dados)
+reg9 <- glm(modelo9, family = binomial(link = "logit"), data = dados)
+```
+
+```{r}
+## Modelo escolhido
+modelo10 <- cancerpancreas ~ cafe + cigarro + sexo + idoso
+reg10 <- glm(modelo10, family = binomial(link = "logit"), data = dados)
+```
+
+```{r}
+#| echo: false
+#| results: hide
+## Valor de log-verossimilhanca
+RV_reg1 <- logLik(reg1)
+RV_reg2 <- logLik(reg2)
+RV_reg3 <- logLik(reg3)
+RV_reg4 <- logLik(reg4)
+RV_reg5 <- logLik(reg5)
+RV_reg6 <- logLik(reg6)
+RV_reg7 <- logLik(reg7)
+RV_reg8 <- logLik(reg8)
+RV_reg9 <- logLik(reg9)
+RV_reg10 <- logLik(reg10)
+```
+
+```{r}
+#| echo: false
+#| results: hide
+## Pseudo R2 dos modelos probit e logit
+pseudoR2_reg1 <- 1 - reg1$deviance / reg1$null.deviance
+pseudoR2_reg2 <- 1 - reg2$deviance / reg2$null.deviance
+pseudoR2_reg3 <- 1 - reg3$deviance / reg3$null.deviance
+pseudoR2_reg4 <- 1 - reg4$deviance / reg4$null.deviance
+pseudoR2_reg5 <- 1 - reg5$deviance / reg5$null.deviance
+pseudoR2_reg6 <- 1 - reg6$deviance / reg6$null.deviance
+pseudoR2_reg7 <- 1 - reg7$deviance / reg7$null.deviance
+pseudoR2_reg8 <- 1 - reg8$deviance / reg8$null.deviance
+pseudoR2_reg7 <- 1 - reg7$deviance / reg7$null.deviance
+pseudoR2_reg8 <- 1 - reg8$deviance / reg8$null.deviance
+pseudoR2_reg9 <- 1 - reg9$deviance / reg9$null.deviance
+pseudoR2_reg10 <- 1 - reg10$deviance / reg10$null.deviance
+```
+
+```{r}
+#| echo: false
+#| results: hide
+## Teste de significancia conjunta (todos os regressores)
+testeRV_reg1 <- lmtest::lrtest(reg1)
+testeRV_reg2 <- lmtest::lrtest(reg2)
+testeRV_reg3 <- lmtest::lrtest(reg3)
+testeRV_reg4 <- lmtest::lrtest(reg4)
+testeRV_reg5 <- lmtest::lrtest(reg5)
+testeRV_reg6 <- lmtest::lrtest(reg6)
+testeRV_reg7 <- lmtest::lrtest(reg7)
+testeRV_reg8 <- lmtest::lrtest(reg8)
+testeRV_reg9 <- lmtest::lrtest(reg9)
+testeRV_reg10 <- lmtest::lrtest(reg10)
+```
+
+::: paragrafo
+O método utilizado para verificar se fatores como consumo de café, consumo de cigarro, sexo e o fato de o indivíduo ser idoso incrementam a probabilidade de um indivíduo desenvolver câncer de pâncreas foi o modelo logit.
+
+A fim de verificar a robustez e selecionar a especificação com a melhor qualidade de ajuste foram estimados 10 modelos, mostrados na Tabela 2. Os modelos (1) e (2) são regressões simples e utilizaram como variáveis explicativas, respectivamente, `cafe` e `cigarro`. Ambas variáveis apresentam significância estatística a um nível de 1%.
+
+A estimação dos modelos de (3) a (8) constata que a significância estatística das variáveis `cafe` e `cigarro` se mantem com a adição de mais variáveis explicativas ao modelos (1) e (2).
+
+Já ao se estimar a regressão (9), com `cafe` e `cigarro` simultaneamente, o nível de significância da variável `cafe` passa de 1% para 5%, apontando para uma perda de significância estatística e `cigarro` matém o nível de 1%. Por fim, estimou-se o modelo (10) com todas as quatro variáveis. Neste modelo, enquanto a variável `cigarro` permaneceu estatísticamente significante a um nível de 1%, `cafe` não apresentou significância estatística.
+
+Daí, infere-se que o aumento na probabilidade de se ter câncer de pâncreas aparentemente provocado pelo café, nas equações (1), (3), (5), (7) e (9) pode estar sendo causado por outras variáveis, corroborando a conclusão de que `cafe` é uma variável de confusão.
+
+Em relação as variárveis `idoso` e `homem`, a primeira foi significante a 5% em todos os modelos em que esteve presente, ao passo que a segunda não obteve sigificância em nenhum modelo que foi incluída.
+
+Dessa forma, considerando as variáveis investigadas, conclui-se que os fatores elevam a probabilidade de um indivíduo ter câncer são ser fumante e ser idoso.
+
+<br>
+
+$$
+P(cancerpancreas = 1 \: | \: x_i) = G(\beta_0 \: + \: \beta_1cigarro \: + \: \beta_2cafe + \beta_3homem + \beta_4idoso)
+$$ {#eq-logit}
+
+<br>
+:::
+
+<br>
+
+{{< include tabreg.txt >}}
+
+<br>
+
+Os resultados mostrados
+
+```{r fig.align='center'}
+#| tbl-cap: Tabela 3 - Probabilidades
+
+
+## Probabilidade de Mª Amelia e Seu Antonio terem cancer de pancreas
+xpredict <- 
+  list(
+    cafe = c(1, 1), 
+    cigarro = c(0, 1), 
+    sexo = c(0, 1), 
+    idoso = c(0, 1)
+  )
+
+ypredict <- predict(reg10, xpredict, type = "response")
+
+tabela3 <- as.data.frame(t(ypredict))
+colnames(tabela3) <- c("Maria", "Seu Antônio")
+
+tabela3_ft <-
+  tabela3 |>
+  flextable::flextable(cwidth = 2) |>
+  flextable::set_table_properties(align = "center") |>
+  flextable::align(align = "center") |>
+  flextable::align(part = "header", align = "center")
+
+tabela3_ft
+
+```
